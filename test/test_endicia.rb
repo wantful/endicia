@@ -541,6 +541,137 @@ class TestEndicia < Test::Unit::TestCase
     end
   end
 
+  context '.refund_request(tracking_number, options)' do
+    should 'make a RefundRequest call to the Endicia API' do
+      Endicia.expects(:get).with do |els_service_url|
+        regex = /http.+&method=RefundRequest&XMLInput=(.+)/
+        els_service_url.match(regex) do |match|
+          doc = Nokogiri::Slop(URI.decode(match[1]))
+          doc.RefundRequest &&
+          doc.RefundRequest.AccountID.content == "123456" &&
+          doc.RefundRequest.PassPhrase.content == "PassPhrase" &&
+          doc.RefundRequest.Test.content == "YES" &&
+          doc.RefundRequest.RefundList.PICNumber.content == "the tracking number"
+        end
+      end.returns(fake_response)
+      
+      Endicia.refund_request("the tracking number", {
+        :AccountID => "123456",
+        :PassPhrase => "PassPhrase",
+        :Test => "YES"
+      })
+    end
+    
+    should 'use options from rails endicia config if present' do
+      attrs = {
+        :PassPhrase => "my_phrase",
+        :AccountID => "456789",
+        :Test => "YES"
+      }
+      
+      with_rails_endicia_config(attrs) do
+        Endicia.expects(:get).with do |els_service_url|
+          regex = /http.+&method=RefundRequest&XMLInput=(.+)/
+          els_service_url.match(regex) do |match|
+            doc = Nokogiri::Slop(URI.decode(match[1]))
+            doc.RefundRequest.Test.content == "YES" &&
+            doc.RefundRequest.AccountID.content == "456789" &&
+            doc.RefundRequest.PassPhrase.content == "my_phrase"
+          end
+        end.returns(fake_response)
+        Endicia.refund_request("the tracking number")
+      end
+    end
+    
+    should "include response body in return hash" do
+      response = stub_everything("response", :body => "the response body")
+      Endicia.stubs(:get).returns(response)
+      result = Endicia.refund_request("the tracking number")
+      assert_equal "the response body", result[:response_body]
+    end
+    
+    context 'when successful' do
+      setup do
+        Endicia.stubs(:get).returns(fake_response({
+          "RefundResponse" => {
+            "ErrorMsg" => nil,
+            "FormNumber" => 567890,
+            "RefundList" => {
+              "PICNumber" => %Q{
+                the tracking number
+                <IsApproved>YES</IsApproved>
+                <ErrorMsg>Approved - Less than 10 days.</ErrorMsg>
+              }
+            }
+          }
+        }))
+      end
+    
+      should 'include :success => true in returned hash' do
+        result = Endicia.refund_request("the tracking number")
+        assert result[:success], "result[:success] should be true but it's #{result[:success].inspect}"
+      end
+
+      should 'include error_message in response' do
+        result = Endicia.refund_request("the tracking number")
+        assert result[:error_message] == 'Approved - Less than 10 days.'
+      end
+
+      should 'include form_number in response' do
+        result = Endicia.refund_request("the tracking number")
+        assert result[:form_number] == 567890
+      end
+    end
+
+    context 'when login not successful' do
+      setup do
+        Endicia.stubs(:get).returns(fake_response({
+          "RefundResponse" => {
+            "ErrorMsg" => "I played your man and he died."
+          }
+        }))
+      end
+      
+      should 'include :success => false in the returned hash' do
+        result = Endicia.refund_request("the tracking number")
+        assert !result[:success], "result[:success] should be false but it's #{result[:success].inspect}"
+      end
+      
+      should 'include error message in the returned hash' do
+        result = Endicia.refund_request("the tracking number")
+        assert_equal "I played your man and he died.", result[:error_message]
+      end
+    end
+
+    context 'when refund not successful' do
+      setup do
+        Endicia.stubs(:get).returns(fake_response({
+          "RefundResponse" => {
+            "ErrorMsg" => nil,
+            "FormNumber" => nil,
+            "RefundList" => {
+              "PICNumber" => %Q{
+                the tracking number
+                <IsApproved>NO</IsApproved>
+                <ErrorMsg>Denied - Must be within 10 days.</ErrorMsg>
+              }
+            }
+          }
+        }))
+      end
+      
+      should 'include :success => false in the returned hash' do
+        result = Endicia.refund_request("the tracking number")
+        assert !result[:success], "result[:success] should be false but it's #{result[:success].inspect}"
+      end
+      
+      should 'include error message in the returned hash' do
+        result = Endicia.refund_request("the tracking number")
+        assert_equal "Denied - Must be within 10 days.", result[:error_message]
+      end
+    end
+  end
+
   context '.carrier_pickup_request(tacking_number, package_location, options)' do
     should 'make a CarrierPickupRequest call to the Endicia API' do
       Endicia.expects(:get).with do |els_service_url|

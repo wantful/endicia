@@ -214,6 +214,66 @@ module Endicia
     
     response 
   end
+
+  # Given a tracking number, try and void the label generated in a previous call
+  #
+  # See https://app.sgizmo.com/users/4508/Endicia_Label_Server.pdf Table 11-1
+  # for available/required options.
+  #
+  # Note: options should be specified in a "flat" hash, they should not be
+  # formated to fit the nesting of the XML.
+  #
+  # If you are using rails, any applicable options specified in
+  # config/endicia.yml will be used as defaults. For example:
+  #
+  #     development:
+  #       Test: YES
+  #       AccountID: 123
+  #       ...
+  #
+  # Returns a hash in the form:
+  #
+  #     {
+  #       :success => true, # or false
+  #       :error_message => "the message", # message describing success
+  #                                        # or failure
+  #       :form_number   => 12345, # Form Number for refunded label
+  #       :response_body => "the response body"
+  #     }
+  def self.refund_request(tracking_number, options = {})
+    xml = Builder::XmlMarkup.new.RefundRequest do |xml|
+      xml.AccountID(options[:AccountID] || defaults[:AccountID])
+      xml.PassPhrase(options[:PassPhrase] || defaults[:PassPhrase])
+      xml.Test(options[:Test] || defaults[:Test] || "NO")
+      xml.RefundList { |xml| xml.PICNumber(tracking_number) }
+    end
+  
+    params = { :method => 'RefundRequest', :XMLInput => URI.encode(xml) }
+    result = self.get(els_service_url(params))
+
+    response = {
+      :success => false,
+      :error_message => nil,
+      :response_body => result.body
+    }
+
+    # TODO: It is possible to make a batch refund request, currently this only
+    #       supports one at a time. The response that comes back is not parsed
+    #       well by HTTParty. So we have to assume there is only one IsApproved
+    #       and ErrorMsg in order to return them
+    if result && result = result['RefundResponse']
+      unless response[:error_message] = result['ErrorMsg']
+        response[:form_number]   = result['FormNumber']
+
+        result = result['RefundList']['PICNumber']
+        response[:success]       = (result.match(/<IsApproved>YES<\/IsApproved>/) ? true : false)
+        response[:error_message] = result.match(/<ErrorMsg>(.+)<\/ErrorMsg>/)[1]
+      end
+    end
+
+    response
+  end
+  
   
   # Given a tracking number and package location code,
   # return a carrier pickup confirmation.
