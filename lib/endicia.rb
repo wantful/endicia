@@ -69,13 +69,25 @@ module Endicia
       :LabelType => opts.delete(:LabelType) || "Default",
       :Test => opts.delete(:Test),
       :LabelSize => opts.delete(:LabelSize),
-      :ImageFormat => opts.delete(:ImageFormat)
+      :ImageFormat => opts.delete(:ImageFormat),
+      :ImageResolution => opts.delete(:ImageResolution)
     }
     
+    mailpiece_dimenions = {
+      :Length => opts.delete(:Length),
+      :Width  => opts.delete(:Width),
+      :Height => opts.delete(:Height)
+    }.delete_if { |key, value| value.blank? }
+
     xml = Builder::XmlMarkup.new
     body = "labelRequestXML=" + xml.LabelRequest(root_attributes) do |xm|
       opts.each { |key, value| xm.tag!(key, value) }
       xm.Services({ :InsuredMail => insurance }) if insurance
+      unless mailpiece_dimenions.empty?
+        xm.MailpieceDimensions do |md|
+          mailpiece_dimenions.each { |key, value| md.tag!(key, value) }
+        end
+      end
     end
     
     result = self.post(url, :body => body)
