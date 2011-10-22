@@ -289,8 +289,11 @@ module Endicia
         response[:form_number]   = result['FormNumber']
 
         result = result['RefundList']['PICNumber']
-        response[:success]       = (result.match(/<IsApproved>YES<\/IsApproved>/) ? true : false)
-        response[:error_message] = result.match(/<ErrorMsg>(.+)<\/ErrorMsg>/)[1]
+        # match against the raw response because httpparty seems to be chucking
+        # the invalid xml w/in PICNumber
+        raw_response = response[:response_body]
+        response[:success]       = (raw_response.match(/<IsApproved>YES<\/IsApproved>/) ? true : false)
+        response[:error_message] = raw_response.match(/<ErrorMsg>(.+)<\/ErrorMsg>/)[1]
       end
     end
 
