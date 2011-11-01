@@ -15,6 +15,13 @@ module TestEndiciaHelper
       !doc.css("LabelRequest[#{key}='#{value}']").empty?
     end.returns(returns)
   end
+
+  def expect_label_request_body_with(&block)
+    Endicia.expects(:post).with do |url, options|
+      doc = Nokogiri::XML(options[:body].sub("labelRequestXML=", ""))
+      block.call(doc)
+    end.returns(fake_response)
+  end
   
   def expect_request_url(url)
     Endicia.expects(:post).with do |request_url, options|
@@ -78,10 +85,9 @@ class TestEndicia < Test::Unit::TestCase
     
     should "send insurance option to endicia" do
       %w(OFF ON UspsOnline Endicia).each do |value|
-        Endicia.expects(:post).with do |url, options|
-          doc = Nokogiri::XML(options[:body].sub("labelRequestXML=", ""))
+        expect_label_request_body_with do |doc|
           !doc.css("LabelRequest > Services[InsuredMail=#{value}]").empty?
-        end.returns(fake_response)
+        end
         Endicia.get_label({ :InsuredMail => value })
       end
     end
@@ -91,6 +97,12 @@ class TestEndicia < Test::Unit::TestCase
         options = { :InsuredMail => "Endicia", :ToPostalCode => zip, :Jewelry => true }
         assert_raise(Endicia::InsuranceError, /#{zip}/) { Endicia.get_label(options) }
       end
+    end
+    
+    should "not include Jewelry in request XML" do
+      options = { :InsuredMail => nil, :Jewelry => true }
+      expect_label_request_body_with { |doc| doc.xpath("//Jewelry").empty? }
+      Endicia.get_label(options)
     end
     
     should "return an Endicia::Label object" do
@@ -105,6 +117,16 @@ class TestEndicia < Test::Unit::TestCase
       
       the_label = Endicia.get_label
       assert_equal request_body, the_label.request_body
+    end
+    
+    should "save the request url to the returned label object" do
+      request_url = nil
+      Endicia.expects(:post).with do |url, params|
+        request_url = url
+      end.returns(fake_response)
+      
+      the_label = Endicia.get_label
+      assert_equal request_url, the_label.request_url
     end
   end
   
