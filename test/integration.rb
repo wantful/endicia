@@ -20,9 +20,9 @@ class IntegrationTest < Test::Unit::TestCase
       :FromState => "FL",
       :FromPostalCode => "32862",
       :ToAddress1 => "123 Fake Street",
-      :ToCity => "San Francisco",
-      :ToState => "CA",
-      :ToPostalCode => "94102"
+      :ToCity => "Austin",
+      :ToState => "TX",
+      :ToPostalCode => "78723"
     }
   end
   
@@ -41,25 +41,27 @@ class IntegrationTest < Test::Unit::TestCase
       result = Endicia.get_label(options)
       assert_equal '0', result.status
     end
+    
+    should "get back a reasonable amount of image data given #{description}" do
+      result = Endicia.get_label(options)
+      assert result.image.length > 1024
+    end
   end
   
-  def self.should_save_sample_label_to(filename, options)
-    should "be able to save returned shipping label as #{filename}" do
-      result = Endicia.get_label(options)
-      sample = File.expand_path("images/#{filename}", File.dirname(__FILE__))
-      File.open(sample, 'w') { |f| f.write(Base64.decode64(result.image)) }
-      # Bare minimum assertion to ensure we have *something* there...
-      File.open(sample, 'r') { |f| assert f.size > 1024 }
-      # ...but mostly we just want to see it with our own eyes:
-      puts "\n==============================================================="
+  def self.save_sample_label_to(filename, options)
+    result = Endicia.get_label(options)
+    sample = File.expand_path("images/#{filename}", File.dirname(__FILE__))
+    File.open(sample, 'w') { |f| f.write(Base64.decode64(result.image)) }
+    if ENV['SHOW_SAMPLE_PATHS']
+      puts "\n============================================================="
       puts " Saved example shipping label at:\n #{sample} "
-      puts "==============================================================="
+      puts "============================================================="
     end
   end
   
   context 'calling .get_label' do
     should_generate_label_from("required options", label_request_options)
-    should_save_sample_label_to("label.png", label_request_options)
+    save_sample_label_to("label.png", label_request_options)
     
     %w(OFF ON UspsOnline Endicia).each do |value|
       options = label_request_options.merge({
@@ -68,8 +70,11 @@ class IntegrationTest < Test::Unit::TestCase
       })
       
       should_generate_label_from("options with insurance value of #{value}", options)
-      should_save_sample_label_to("sample-insurance-#{value}.png", options)
+      save_sample_label_to("sample-insurance-#{value}.png", options)
     end
+    
+    should_generate_label_from("a 9-digit zip code",
+      label_request_options.merge(:ToPostalCode => "78723-5374"))
   end
   
   context 'calling .carrier_pickup_request with valid options' do

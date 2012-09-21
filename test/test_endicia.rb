@@ -8,7 +8,7 @@ module TestEndiciaHelper
     hash.stubs(:body).returns(body)
     hash
   end
-  
+
   def expect_label_request_attribute(key, value, returns = fake_response)
     Endicia.expects(:post).with do |request_url, options|
       doc = Nokogiri::XML(options[:body].sub("labelRequestXML=", ""))
@@ -22,67 +22,76 @@ module TestEndiciaHelper
       block.call(doc)
     end.returns(fake_response)
   end
-  
+
   def expect_request_url(url)
     Endicia.expects(:post).with do |request_url, options|
       request_url == url
     end.returns(fake_response)
   end
-  
+
   def assert_label_request_attributes(key, values)
     values.each do |value|
       expect_label_request_attribute(key, value)
       Endicia.get_label(key.to_sym => value)
     end
   end
-  
+
   def with_rails_endicia_config(attrs)
     Endicia.instance_variable_set(:@defaults, nil)
-    
+
     Endicia.stubs(:rails?).returns(true)
     Endicia.stubs(:rails_root).returns("/project/root")
     Endicia.stubs(:rails_env).returns("development")
-    
+
     config = { "development" => attrs }
     config_path = "/project/root/config/endicia.yml"
 
     File.stubs(:exist?).with(config_path).returns(true)
     YAML.stubs(:load_file).with(config_path).returns(config)
-    
+
     yield
-    
+
     Endicia.instance_variable_set(:@defaults, nil)
   end
-  
+
   def the_production_server_url(req_path)
     "https://LabelServer.Endicia.com/LabelService/EwsLabelService.asmx/#{req_path}"
   end
-  
+
   # Don't call this "test_server_url" or ruby will try to run it as a test.
   def the_test_server_url(req_path)
     "https://www.envmgr.com/LabelService/EwsLabelService.asmx/#{req_path}"
-  end  
+  end
 end
 
 class TestEndicia < Test::Unit::TestCase
   include TestEndiciaHelper
-  
+
   context '.get_label' do
     should "use test server url if :Test option is YES" do
       expect_request_url(the_test_server_url("GetPostageLabelXML"))
       Endicia.get_label(:Test => "YES")
     end
-  
+
     should "use production server url if :Test option is NO" do
       expect_request_url(the_production_server_url("GetPostageLabelXML"))
       Endicia.get_label(:Test => "NO")
     end
-  
+
     should "use production server url if passed no :Test option" do
       expect_request_url(the_production_server_url("GetPostageLabelXML"))
       Endicia.get_label
     end
-    
+
+    should "break 9-digit zip codes into two fields" do
+      expect_label_request_body_with do |doc|
+        doc.at_css("LabelRequest > ToPostalCode").content == "12345"
+        doc.at_css("LabelRequest > ToZIP4").content == "6789"
+      end
+
+      Endicia.get_label(:ToPostalCode => "12345-6789")
+    end
+
     should "send insurance option to endicia" do
       %w(OFF ON UspsOnline Endicia).each do |value|
         expect_label_request_body_with do |doc|
@@ -91,73 +100,73 @@ class TestEndicia < Test::Unit::TestCase
         Endicia.get_label({ :InsuredMail => value })
       end
     end
-    
+
     should "raise if requesting insurance for jewelry to an excluded zip" do
       %w(10036 10017 94102 94108).each do |zip|
         options = { :InsuredMail => "Endicia", :ToPostalCode => zip, :Jewelry => true }
         assert_raise(Endicia::InsuranceError, /#{zip}/) { Endicia.get_label(options) }
       end
     end
-    
+
     should "not include Jewelry in request XML" do
       options = { :InsuredMail => nil, :Jewelry => true }
       expect_label_request_body_with { |doc| doc.xpath("//Jewelry").empty? }
       Endicia.get_label(options)
     end
-    
+
     should "return an Endicia::Label object" do
       assert_kind_of Endicia::Label, Endicia.get_label
     end
-    
+
     should "save the request body on the returned label object" do
       request_body = nil
       Endicia.expects(:post).with do |url, params|
         request_body = params[:body]
       end.returns(fake_response)
-      
+
       the_label = Endicia.get_label
       assert_equal request_body, the_label.request_body
     end
-    
+
     should "save the request url to the returned label object" do
       request_url = nil
       Endicia.expects(:post).with do |url, params|
         request_url = url
       end.returns(fake_response)
-      
+
       the_label = Endicia.get_label
       assert_equal request_url, the_label.request_url
     end
   end
-  
+
   context 'root node attributes on .get_label request' do
     setup do
       @request_url = "http://test.com"
       Endicia.stubs(:label_service_url).returns(@request_url)
     end
-  
+
     should "pass LabelType option" do
       assert_label_request_attributes("LabelType", %w(Express CertifiedMail Priority))
     end
-  
+
     should "set LabelType attribute to Default by default" do
       expect_label_request_attribute("LabelType", "Default")
       Endicia.get_label
     end
-  
+
     should "pass Test option" do
       assert_label_request_attributes("Test", %w(YES NO))
     end
-  
+
     should "pass LabelSize option" do
       assert_label_request_attributes("LabelSize", %w(4x6 6x4 7x3))
     end
-  
+
     should "pass ImageFormat option" do
       assert_label_request_attributes("ImageFormat", %w(PNG GIFT PDF))
     end
   end
-  
+
   context 'Label' do
     setup do
       # See https://app.sgizmo.com/users/4508/Endicia_Label_Server.pdf
@@ -179,24 +188,24 @@ class TestEndicia < Test::Unit::TestCase
         }
       })
     end
-  
+
     should "initialize with relevant data from an endicia api response without error" do
       assert_nothing_raised { Endicia::Label.new(@response) }
     end
-    
+
     should "include response body" do
       @response.stubs(:body).returns("the response body")
       the_label = Endicia::Label.new(@response)
       assert_equal "the response body", the_label.response_body
     end
-    
+
     should "strip image data from #response_body" do
       @response.stubs(:body).returns("<data><one>two</one><Base64LabelImage>binary data</Base64LabelImage></data>")
       the_label = Endicia::Label.new(@response)
       assert_equal "<data><one>two</one><Base64LabelImage>[data]</Base64LabelImage></data>", the_label.response_body
     end
   end
-  
+
   context 'defaults in rails' do
     should "load from config/endicia.yml" do
       attrs = {
@@ -204,12 +213,12 @@ class TestEndicia < Test::Unit::TestCase
         :RequesterID => "abc",
         :PassPhrase  => "123",
       }
-    
+
       with_rails_endicia_config(attrs) do
         assert_equal attrs, Endicia.defaults
       end
     end
-  
+
     should "support root node request attributes" do
       attrs = {
         :Test        => "YES",
@@ -217,7 +226,7 @@ class TestEndicia < Test::Unit::TestCase
         :LabelSize   => "6x4",
         :ImageFormat => "PNG"
       }
-    
+
       with_rails_endicia_config(attrs) do
         attrs.each do |key, value|
           expect_label_request_attribute(key, value)
@@ -226,12 +235,12 @@ class TestEndicia < Test::Unit::TestCase
       end
     end
   end
-  
+
   context '.change_pass_phrase(new, options)' do
     should 'make a ChangePassPhraseRequest call to the Endicia API' do
       Endicia.stubs(:label_service_url).returns("http://example.com/api")
       Time.any_instance.stubs(:to_f).returns("timestamp")
-      
+
       Endicia.expects(:post).with do |request_url, options|
         request_url == "http://example.com/api/ChangePassPhraseXML" &&
         options[:body] &&
@@ -245,14 +254,14 @@ class TestEndicia < Test::Unit::TestCase
           doc.ChangePassPhraseRequest.NewPassPhrase.content == "newPassPhrase"
         end
       end.returns(fake_response)
-      
+
       Endicia.change_pass_phrase("newPassPhrase", {
         :PassPhrase => "oldPassPhrase",
         :RequesterID => "abcd",
         :AccountID => "123456"
       })
     end
-    
+
     should 'use credentials from rails endicia config if present' do
       attrs = {
         :PassPhrase => "old_phrase",
@@ -270,21 +279,21 @@ class TestEndicia < Test::Unit::TestCase
             doc.ChangePassPhraseRequest.CertifiedIntermediary.PassPhrase.content == "old_phrase"
           end
         end.returns(fake_response)
-        
+
         Endicia.change_pass_phrase("new")
       end
     end
-    
+
     should 'use test url if passed :Test => YES option' do
       expect_request_url(the_test_server_url("ChangePassPhraseXML"))
       Endicia.change_pass_phrase("new", { :Test => "YES" })
     end
-    
+
     should 'use production url if not passed :Test => YES option' do
       expect_request_url(the_production_server_url("ChangePassPhraseXML"))
       Endicia.change_pass_phrase("new")
     end
-      
+
     should 'use test option from rails endicia config if present' do
       attrs = { :Test => "YES" }
       with_rails_endicia_config(attrs) do
@@ -292,27 +301,27 @@ class TestEndicia < Test::Unit::TestCase
         Endicia.change_pass_phrase("new")
       end
     end
-    
+
     should "include response body in return hash" do
       response = stub_everything("response", :body => "the response body")
       Endicia.stubs(:post).returns(response)
       result = Endicia.change_pass_phrase("new")
       assert_equal "the response body", result[:response_body]
-    end    
-    
+    end
+
     context 'when successful' do
       setup do
         Endicia.stubs(:post).returns(fake_response({
           "ChangePassPhraseRequestResponse" => { "Status" => "0" }
         }))
       end
-      
+
       should 'return hash with :success => true' do
         result = Endicia.change_pass_phrase("new_phrase")
         assert result[:success], "result[:success] should be true but it's #{result[:success].inspect}"
       end
     end
-    
+
     context 'when not successful' do
       setup do
         Endicia.stubs(:post).returns(fake_response({
@@ -320,12 +329,12 @@ class TestEndicia < Test::Unit::TestCase
             "Status" => "1", "ErrorMessage" => "the error message" }
         }))
       end
-  
+
       should 'return hash with :success => false' do
         result = Endicia.change_pass_phrase("new_phrase")
         assert !result[:success], "result[:success] should be false but it's #{result[:success].inspect}"
       end
-      
+
       should 'return hash with an :error_message' do
         result = Endicia.change_pass_phrase("new_phrase")
         assert_equal "the error message", result[:error_message]
@@ -337,7 +346,7 @@ class TestEndicia < Test::Unit::TestCase
     should 'make a BuyPostage call to the Endicia API' do
       Endicia.stubs(:label_service_url).returns("http://example.com/api")
       Time.any_instance.stubs(:to_f).returns("timestamp")
-      
+
       Endicia.expects(:post).with do |request_url, options|
         request_url == "http://example.com/api/BuyPostageXML" &&
         options[:body] &&
@@ -351,14 +360,14 @@ class TestEndicia < Test::Unit::TestCase
           doc.RecreditRequest.RecreditAmount.content == "125.99"
         end
       end.returns(fake_response)
-      
+
       Endicia.buy_postage("125.99", {
         :PassPhrase => "PassPhrase",
         :RequesterID => "abcd",
         :AccountID => "123456"
       })
     end
-    
+
     should 'use credentials from rails endicia config if present' do
       attrs = {
         :PassPhrase => "my_phrase",
@@ -376,21 +385,21 @@ class TestEndicia < Test::Unit::TestCase
             doc.RecreditRequest.CertifiedIntermediary.PassPhrase.content == "my_phrase"
           end
         end.returns(fake_response)
-        
+
         Endicia.buy_postage("100")
       end
     end
-    
+
     should 'use test url if passed :Test => YES option' do
       expect_request_url(the_test_server_url("BuyPostageXML"))
       Endicia.buy_postage("100", { :Test => "YES" })
     end
-    
+
     should 'use production url if not passed :Test => YES option' do
       expect_request_url(the_production_server_url("BuyPostageXML"))
       Endicia.buy_postage("100")
     end
-      
+
     should 'use test option from rails endicia config if present' do
       attrs = { :Test => "YES" }
       with_rails_endicia_config(attrs) do
@@ -398,27 +407,27 @@ class TestEndicia < Test::Unit::TestCase
         Endicia.buy_postage("100")
       end
     end
-    
+
     should "include response body in return hash" do
       response = stub_everything("response", :body => "the response body")
       Endicia.stubs(:post).returns(response)
       result = Endicia.buy_postage("100")
       assert_equal "the response body", result[:response_body]
     end
-    
+
     context 'when successful' do
       setup do
         Endicia.stubs(:post).returns(fake_response({
           "RecreditRequestResponse" => { "Status" => "0" }
         }))
       end
-      
+
       should 'return hash with :success => true' do
         result = Endicia.buy_postage("100")
         assert result[:success], "result[:success] should be true but it's #{result[:success].inspect}"
       end
     end
-    
+
     context 'when not successful' do
       setup do
         Endicia.stubs(:post).returns(fake_response({
@@ -426,19 +435,19 @@ class TestEndicia < Test::Unit::TestCase
             "Status" => "1", "ErrorMessage" => "the error message" }
         }))
       end
-  
+
       should 'return hash with :success => false' do
         result = Endicia.buy_postage("100")
         assert !result[:success], "result[:success] should be false but it's #{result[:success].inspect}"
       end
-      
+
       should 'return hash with an :error_message' do
         result = Endicia.buy_postage("100")
         assert_equal "the error message", result[:error_message]
       end
     end
   end
-  
+
   context '.status_request(tracking_number, options)' do
     should 'make a StatusRequest call to the Endicia API' do
       Endicia.expects(:get).with do |els_service_url|
@@ -452,21 +461,21 @@ class TestEndicia < Test::Unit::TestCase
           doc.StatusRequest.StatusList.PICNumber.content == "the tracking number"
         end
       end.returns(fake_response)
-      
+
       Endicia.status_request("the tracking number", {
         :AccountID => "123456",
         :PassPhrase => "PassPhrase",
         :Test => "YES"
       })
     end
-    
+
     should 'use options from rails endicia config if present' do
       attrs = {
         :PassPhrase => "my_phrase",
         :AccountID => "456789",
         :Test => "YES"
       }
-      
+
       with_rails_endicia_config(attrs) do
         Endicia.expects(:get).with do |els_service_url|
           regex = /http.+&method=StatusRequest&XMLInput=(.+)/
@@ -480,41 +489,63 @@ class TestEndicia < Test::Unit::TestCase
         Endicia.status_request("the tracking number")
       end
     end
-    
+
     should "include response body in return hash" do
       response = stub_everything("response", :body => "the response body")
       Endicia.stubs(:get).returns(response)
       result = Endicia.status_request("the tracking number")
       assert_equal "the response body", result[:response_body]
     end
-    
+
+    should "allow you to request full status" do
+      response_body = "" + <<-EOXML
+<StatusResponse>
+  <AccountID>987654</AccountID>
+  <ErrorMsg/>
+    <StatusList>
+      <PICNumber>1234567890987654321234
+        <Status>Your item was delivered at 11:06 AM on 01/14/2012 in WANTHAM MA 02492.</Status>
+          <StatusBreakdown>
+            <Status_1>Out for Delivery  January 14  2012  9:07 am  WANTHAM  MA 02492</Status_1>
+            <Status_2>Sorting Complete  January 14  2012  8:57 am  WANTHAM  MA 02492</Status_2>
+            <Status_3>Arrival at Post Office  January 14  2012  8:27 am  WANTHAM  MA 02492</Status_3>
+            <Status_4>Processed at USPS Origin Sort Facility  January 13  2012  12:19 am  NASHUA  NH 03063</Status_4>
+            <Status_5>Dispatched to Sort Facility  January 12  2012  5:02 pm  KILLINGTON  VT 05751</Status_5>
+            <Status_6>Acceptance  January 12  2012  3:58 pm  KILLINGTON  VT 05751</Status_6>
+            <Status_7>Electronic Shipping Info Received  January 10  2012</Status_7>
+          </StatusBreakdown>
+        <StatusCode>D</StatusCode>
+      </PICNumber>
+    </StatusList>
+</StatusResponse>
+      EOXML
+      response = stub_everything("response", :body => HTTParty.parse_response(response_body))
+      Endicia.stubs(:get).returns(response)
+      result = Endicia.status_request("1234567890987654321234")
+      result[:success].should == true
+      result[:status].should == "Your item was delivered at 11:06 AM on 01/14/2012 in WANTHAM MA 02492."
+      result[:status_code].should == "D"
+    end
+
     context 'when successful' do
       setup do
-        Endicia.stubs(:get).returns(fake_response({
-          "StatusResponse" => {
-            "ErrorMsg" => nil,
-            "StatusList" => {
-              "PICNumber" => %Q{
-                abc123
-                <Status>the status message</Status>
-                <StatusCode>A</StatusCode>
-              }
-            }
-          }
-        }))
+        Endicia.stubs(:get).returns(fake_response(
+          { "StatusResponse" => {} },
+          "<Status>the status message</Status>
+          <StatusCode>A</StatusCode>"))
       end
-      
+
       should 'include :success => true in returned hash' do
         result = Endicia.status_request("the tracking number")
         assert result[:success], "result[:success] should be true but it's #{result[:success].inspect}"
       end
-      
+
       should 'include status message in returned hash' do
         result = Endicia.status_request("the tracking number")
         assert_equal "the status message", result[:status]
       end
     end
-    
+
     context 'when not successful' do
       setup do
         Endicia.stubs(:get).returns(fake_response({
@@ -523,39 +554,31 @@ class TestEndicia < Test::Unit::TestCase
           }
         }))
       end
-      
+
       should 'include :success => false in the returned hash' do
         result = Endicia.status_request("the tracking number")
         assert !result[:success], "result[:success] should be false but it's #{result[:success].inspect}"
       end
-      
+
       should 'include error message in the returned hash' do
         result = Endicia.status_request("the tracking number")
         assert_equal "I played your man and he died.", result[:error_message]
       end
     end
-    
+
     context 'when tracking code is not found' do
       setup do
-        Endicia.stubs(:get).returns(fake_response({
-          "StatusResponse" => {
-            "ErrorMsg" => nil,
-            "StatusList" => {
-              "PICNumber" => %Q{
-                abc123
-                <Status>not found</Status>
-                <StatusCode>-1</StatusCode>
-              }
-            }
-          }
-        }))
+        Endicia.stubs(:get).returns(fake_response(
+          { "StatusResponse" => {} },
+          "<Status>not found</Status>
+          <StatusCode>-1</StatusCode>"))
       end
-      
+
       should 'include :success => false in the returned hash' do
         result = Endicia.status_request("the tracking number")
         assert !result[:success], "result[:success] should be false but it's #{result[:success].inspect}"
       end
-      
+
       should 'include status message in returned hash' do
         result = Endicia.status_request("the tracking number")
         assert_equal "not found", result[:status]
@@ -576,21 +599,21 @@ class TestEndicia < Test::Unit::TestCase
           doc.RefundRequest.RefundList.PICNumber.content == "the tracking number"
         end
       end.returns(fake_response)
-      
+
       Endicia.refund_request("the tracking number", {
         :AccountID => "123456",
         :PassPhrase => "PassPhrase",
         :Test => "YES"
       })
     end
-    
+
     should 'use options from rails endicia config if present' do
       attrs = {
         :PassPhrase => "my_phrase",
         :AccountID => "456789",
         :Test => "YES"
       }
-      
+
       with_rails_endicia_config(attrs) do
         Endicia.expects(:get).with do |els_service_url|
           regex = /http.+&method=RefundRequest&XMLInput=(.+)/
@@ -604,14 +627,14 @@ class TestEndicia < Test::Unit::TestCase
         Endicia.refund_request("the tracking number")
       end
     end
-    
+
     should "include response body in return hash" do
       response = stub_everything("response", :body => "the response body")
       Endicia.stubs(:get).returns(response)
       result = Endicia.refund_request("the tracking number")
       assert_equal "the response body", result[:response_body]
     end
-    
+
     context 'when successful' do
       setup do
         Endicia.stubs(:get).returns(fake_response({
@@ -628,7 +651,7 @@ class TestEndicia < Test::Unit::TestCase
           }
         }))
       end
-    
+
       should 'include :success => true in returned hash' do
         result = Endicia.refund_request("the tracking number")
         assert result[:success], "result[:success] should be true but it's #{result[:success].inspect}"
@@ -653,12 +676,12 @@ class TestEndicia < Test::Unit::TestCase
           }
         }))
       end
-      
+
       should 'include :success => false in the returned hash' do
         result = Endicia.refund_request("the tracking number")
         assert !result[:success], "result[:success] should be false but it's #{result[:success].inspect}"
       end
-      
+
       should 'include error message in the returned hash' do
         result = Endicia.refund_request("the tracking number")
         assert_equal "I played your man and he died.", result[:error_message]
@@ -681,12 +704,12 @@ class TestEndicia < Test::Unit::TestCase
           }
         }))
       end
-      
+
       should 'include :success => false in the returned hash' do
         result = Endicia.refund_request("the tracking number")
         assert !result[:success], "result[:success] should be false but it's #{result[:success].inspect}"
       end
-      
+
       should 'include error message in the returned hash' do
         result = Endicia.refund_request("the tracking number")
         assert_equal "Denied - Must be within 10 days.", result[:error_message]
@@ -708,14 +731,14 @@ class TestEndicia < Test::Unit::TestCase
           doc.CarrierPickupRequest.PickupList.PICNumber.content == "the tracking number"
         end
       end.returns(fake_response)
-      
+
       Endicia.carrier_pickup_request("the tracking number", "sd", {
         :AccountID => "123456",
         :PassPhrase => "PassPhrase",
         :Test => "YES"
       })
     end
-    
+
     should 'accept custom pickup address' do
       Endicia.expects(:get).with do |els_service_url|
         regex = /http.+&method=CarrierPickupRequest&XMLInput=(.+)/
@@ -735,7 +758,7 @@ class TestEndicia < Test::Unit::TestCase
           doc.CarrierPickupRequest.Extension.content == "12345"
         end
       end.returns(fake_response)
-      
+
       Endicia.carrier_pickup_request("the tracking number", "sd", {
         :UseAddressOnFile => "N",
         :FirstName => "Slick",
@@ -751,7 +774,7 @@ class TestEndicia < Test::Unit::TestCase
         :Extension => "12345"
       })
     end
-    
+
     should 'accept custom pickup location' do
       Endicia.expects(:get).with do |els_service_url|
         regex = /http.+&method=CarrierPickupRequest&XMLInput=(.+)/
@@ -761,19 +784,19 @@ class TestEndicia < Test::Unit::TestCase
           doc.CarrierPickupRequest.SpecialInstructions.content == "the special instructions"
         end
       end.returns(fake_response)
-      
+
       Endicia.carrier_pickup_request("the tracking number", "ot", {
         :SpecialInstructions => "the special instructions"
       })
     end
-    
+
     should 'use options from rails endicia config if present' do
       attrs = {
         :PassPhrase => "my_phrase",
         :AccountID => "456789",
         :Test => "YES"
       }
-      
+
       with_rails_endicia_config(attrs) do
         Endicia.expects(:get).with do |els_service_url|
           regex = /http.+&method=CarrierPickupRequest&XMLInput=(.+)/
@@ -787,14 +810,14 @@ class TestEndicia < Test::Unit::TestCase
         Endicia.carrier_pickup_request("the tracking number", "sd")
       end
     end
-    
+
     should "include response body in return hash" do
       response = stub_everything("response", :body => "the response body")
       Endicia.stubs(:get).returns(response)
       result = Endicia.carrier_pickup_request("the tracking number", "sd")
       assert_equal "the response body", result[:response_body]
     end
-    
+
     context 'when successful' do
       setup do
         Endicia.stubs(:get).returns(fake_response({
@@ -808,12 +831,12 @@ class TestEndicia < Test::Unit::TestCase
           }
         }))
       end
-      
+
       should 'include :success => true in returned hash' do
         result = Endicia.carrier_pickup_request("the tracking number", "sd")
         assert result[:success], "result[:success] should be true but it's #{result[:success].inspect}"
       end
-      
+
       should 'include pickup information in the returned hash' do
         result = Endicia.carrier_pickup_request("the tracking number", "sd")
         assert_equal "Monday", result[:day_of_week]
@@ -822,7 +845,7 @@ class TestEndicia < Test::Unit::TestCase
         assert_equal "abc123", result[:confirmation_number]
       end
     end
-    
+
     context 'when there is an error message' do
       setup do
         Endicia.stubs(:get).returns(fake_response({
@@ -831,12 +854,12 @@ class TestEndicia < Test::Unit::TestCase
           }
         }))
       end
-      
+
       should 'include :success => false in the returned hash' do
         result = Endicia.carrier_pickup_request("the tracking number", "sd")
         assert !result[:success], "result[:success] should be false but it's #{result[:success].inspect}"
       end
-      
+
       should 'include error message in the returned hash' do
         result = Endicia.carrier_pickup_request("the tracking number", "sd")
         assert_equal "your ego is out of control", result[:error_message]
@@ -856,12 +879,12 @@ class TestEndicia < Test::Unit::TestCase
           }
         }))
       end
-      
+
       should 'include :success => false in the returned hash' do
         result = Endicia.carrier_pickup_request("the tracking number", "sd")
         assert !result[:success], "result[:success] should be false but it's #{result[:success].inspect}"
       end
-      
+
       should 'include error code in the returned hash' do
         result = Endicia.carrier_pickup_request("the tracking number", "sd")
         assert_equal "123", result[:error_code]
