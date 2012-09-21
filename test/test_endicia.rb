@@ -171,6 +171,7 @@ class TestEndicia < Test::Unit::TestCase
     setup do
       # See https://app.sgizmo.com/users/4508/Endicia_Label_Server.pdf
       # Table 3-2: LabelRequestResponse XML Elements
+      # (Note: linked PDF is out of date and does not reflect the newest API)
       @response = fake_response({
         "LabelRequestResponse" => {
           "Status" => 123,
@@ -184,7 +185,11 @@ class TestEndicia < Test::Unit::TestCase
           "CostCenter" => 12345,
           "ReferenceID" => "abcde12345",
           "PostmarkDate" => "20110102",
-          "PostageBalance" => 3.4
+          "PostageBalance" => 3.4,
+          "RequesterID" => "abcd",
+          "ReferenceID2" => "ref2",
+          "ReferenceID3" => "ref3",
+          "ReferenceID4" => "ref4"
         }
       })
     end
