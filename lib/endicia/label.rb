@@ -21,20 +21,12 @@ module Endicia
                   :response_body
 
     def initialize(result)
-      self.response_body = filter_response_body(result.body.dup)
+      self.response_body = result.body
       data = result["LabelRequestResponse"] || {}
       data.each do |k, v|
         k = "image" if k == 'Base64LabelImage'
         send(:"#{k.tableize.singularize}=", v) if !k['xmlns']
       end
-    end
-
-    private
-
-    def filter_response_body(string)
-      # Strip image data for readability.
-      string.sub(/<Base64LabelImage>.+<\/Base64LabelImage>/,
-                 "<Base64LabelImage>[data]</Base64LabelImage>")
     end
   end
 end
