@@ -302,8 +302,8 @@ module Endicia
         response[:form_number]   = result['FormNumber']
 
         result = result['RefundList']['PICNumber']
-        response[:success]       = (result.match(/<IsApproved>YES<\/IsApproved>/) ? true : false)
-        response[:error_message] = result.match(/<ErrorMsg>(.+)<\/ErrorMsg>/)[1]
+        response[:success]       = result["IsApproved"]["__content__"] == "YES"
+        response[:error_message] = result["ErrorMsg"]["__content__"]
       end
     end
 
