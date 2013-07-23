@@ -25,7 +25,7 @@ module Endicia
       data = result["LabelRequestResponse"] || {}
       data.each do |k, v|
         k = "image" if k == 'Base64LabelImage'
-        send(:"#{k.tableize.singularize}=", v) if !k['xmlns']
+        send(:"#{k.tableize.singularize}=", v) if !k['xmlns'] and self.respond_to? k.tableize.singularize
       end
     end
   end
