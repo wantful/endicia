@@ -12,10 +12,6 @@ module HTTParty
   class Request
     alias_method :parse_response_without_hack, :parse_response
     def parse_response(body)
-      Rails.logger.info("RESPONSE>")
-      Rails.logger.info(body)
-      Rails.logger.info("<RESPONSE")
-
       parse_response_without_hack(
         body.sub(/xmlns=("|')(www.envmgr.com|LabelServer.Endicia.com)/, 'xmlns=\1https://\2'))
     end

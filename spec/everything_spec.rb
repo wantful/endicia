@@ -761,7 +761,7 @@ describe Endicia do
     end
 
     it "include response body in return hash" do
-      response = mock(:response)
+      response = double :response
       response.stub(:[])
       response.stub(:body) {"the response body"}
       Endicia.stub(:get) {response}
