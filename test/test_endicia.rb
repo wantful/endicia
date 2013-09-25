@@ -519,7 +519,7 @@ class TestEndicia < Test::Unit::TestCase
     </StatusList>
 </StatusResponse>
       EOXML
-      response = stub_everything("response", :body => HTTParty.parse_response(response_body))
+      response = stub_everything("response", :body => response_body)
       Endicia.stubs(:get).returns(response)
       result = Endicia.status_request("1234567890987654321234")
       result[:success].should == true
