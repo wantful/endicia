@@ -14,6 +14,7 @@ module Endicia
                   :reference_id2,
                   :reference_id3,
                   :reference_id4,
+                  :requester_id,
                   :cost_center,
                   :request_body,
                   :request_url,
@@ -26,7 +27,7 @@ module Endicia
         send(:"#{k.tableize.singularize}=", v) if !k['xmlns']
       end
     end
-    
+
     private
     def filter_response_body(string)
       # Strip image data for readability:
