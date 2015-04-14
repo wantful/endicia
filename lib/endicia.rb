@@ -302,8 +302,8 @@ module Endicia
         response[:form_number]   = result['FormNumber']
 
         result = result['RefundList']['PICNumber']
-        response[:success]       = (result.match(/<IsApproved>YES<\/IsApproved>/) ? true : false)
-        response[:error_message] = result.match(/<ErrorMsg>(.+)<\/ErrorMsg>/)[1]
+        response[:success]       = result["IsApproved"]["__content__"] == "YES"
+        response[:error_message] = result["ErrorMsg"]["__content__"]
       end
     end
 
@@ -403,7 +403,7 @@ module Endicia
   # (this matches the Test attribute/node value for most API calls).
   def self.label_service_url(options = {})
     test = (options[:Test] || defaults[:Test] || "NO").upcase == "YES"
-    url = test ? "https://www.envmgr.com" : "https://LabelServer.Endicia.com"
+    url = test ? "https://elstestserver.endicia.com" : "https://LabelServer.Endicia.com"
     "#{url}/LabelService/EwsLabelService.asmx"
   end
 
