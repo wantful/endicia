@@ -403,7 +403,7 @@ module Endicia
   # (this matches the Test attribute/node value for most API calls).
   def self.label_service_url(options = {})
     test = (options[:Test] || defaults[:Test] || "NO").upcase == "YES"
-    url = test ? "https://www.envmgr.com" : "https://LabelServer.Endicia.com"
+    url = test ? "https://elstestserver.endicia.com" : "https://LabelServer.Endicia.com"
     "#{url}/LabelService/EwsLabelService.asmx"
   end
 
